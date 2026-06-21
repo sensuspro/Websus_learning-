@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Websus Learning - AI Chat Demo</title>
+  <style>
+    body { font-family: Inter, Arial; background:#F7F9FB; color:#111; margin:0; padding:0; display:flex; height:100vh; }
+    .container { margin:auto; width:920px; max-width:95%; background:white; box-shadow:0 6px 24px rgba(0,0,0,0.08); border-radius:10px; overflow:hidden; display:grid; grid-template-columns: 260px 1fr 280px; min-height:600px; }
+    .sidebar { padding:16px; border-right:1px solid #eef2f6; }
+    .chat { display:flex; flex-direction:column; }
+    .messages { flex:1; padding:16px; overflow:auto; }
+    .message { margin-bottom:12px; }
+    .me { text-align:right; }
+    .inputBar { display:flex; padding:12px; border-top:1px solid #eef2f6; gap:8px; }
+    button { background:#2A9DF4; color:white; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; }
+    .muted { background:#f1f5f9; color:#334155; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="sidebar">
+      <h3>Chats</h3>
+      <div>AI Coach</div>
+      <div style="margin-top:12px; color:#6b7280;">Nutq uchun Web Speech API ishlatiladi</div>
+    </div>
+    <div class="chat">
+      <div class="messages" id="messages"></div>
+      <div class="inputBar">
+        <input id="text" placeholder="Xabar yozing..." style="flex:1; padding:8px; border-radius:8px; border:1px solid #e6eef7" />
+        <button id="send">Yuborish</button>
+        <button id="rec">Yozib olish</button>
+        <button id="play" class="muted">O'qish</button>
+      </div>
+    </div>
+    <div style="padding:16px; border-left:1px solid #eef2f6;">
+      <h4>AI takliflar</h4>
+      <div id="suggest">"Ishonavering — kichik gaplar bilan boshlang"</div>
+    </div>
+  </div>
+
+<script>
+const messagesEl = document.getElementById('messages');
+const textEl = document.getElementById('text');
+const sendBtn = document.getElementById('send');
+const recBtn = document.getElementById('rec');
+const playBtn = document.getElementById('play');
+const suggestEl = document.getElementById('suggest');
+
+function appendMessage(text, from='ai') {
+  const d = document.createElement('div');
+  d.className = 'message ' + (from === 'me' ? 'me' : '');
+  d.innerHTML = `<div style="display:inline-block; background:${from==='me'?'#2A9DF4':'#f1f5f9'}; color:${from==='me'?'white':'#111'}; padding:8px 12px; border-radius:10px; max-width:75%;">${escapeHtml(text)}</div>`;
+  messagesEl.appendChild(d);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function sendMessage(message) {
+  appendMessage(message, 'me');
+  try {
+    const res = await fetch('/api/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ message })
+    });
+    const data = await res.json();
+    if (data.reply) {
+      appendMessage(data.reply, 'ai');
+      // takliflar qismi uchun oddiy heuristika
+      suggestEl.textContent = data.reply.split('.').slice(0,2).join('. ');
+      playBtn.disabled = false;
+    } else {
+      appendMessage('AI dan javob kelmadi', 'ai');
+    }
+  } catch (e) {
+    appendMessage('Server bilan bogʻlanishda xatolik: ' + e.message, 'ai');
+  }
+}
+
+sendBtn.addEventListener('click', () => {
+  const v = textEl.value.trim();
+  if (!v) return;
+  sendMessage(v);
+  textEl.value = '';
+});
+
+// Web Speech API - SpeechRecognition (ASR) va speechSynthesis (TTS)
+let recognition, recognizing=false;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'uz-UZ';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => { recognizing = true; recBtn.textContent = 'Yozilmoqda…'; };
+  recognition.onend = () => { recognizing = false; recBtn.textContent = 'Yozib olish'; };
+  recognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    textEl.value = transcript;
+    sendMessage(transcript);
+  };
+  recognition.onerror = (e) => { console.error(e); appendMessage('ASR xatolik: ' + e.error, 'ai'); };
+} else {
+  recBtn.disabled = true;
+  recBtn.textContent = 'ASR mavjud emas';
+}
+
+recBtn.addEventListener('click', () => {
+  if (!recognition) return;
+  if (recognizing) recognition.stop();
+  else recognition.start();
+});
+
+playBtn.addEventListener('click', () => {
+  // so'nggi AI xabarini o'qish (speechSynthesis)
+  const lastAi = Array.from(messagesEl.querySelectorAll('.message')).reverse().find(m => !m.classList.contains('me'));
+  if (!lastAi) return;
+  const text = lastAi.innerText;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'uz-UZ';
+  window.speechSynthesis.speak(u);
+});
+
+// disable play zuerst
+playBtn.disabled = true;
+</script>
+</body>
+</html>
